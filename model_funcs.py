@@ -44,7 +44,7 @@ def create_doc_vecs(docs, word_vecs):
     return doc_vecs
 
 #GLOVE
-def get_glove_embeddings(): 
+def build_glove_embeddings(): 
     embeddings_index = {}
     f = open(p.GLOVE_PATH, encoding = 'utf8')
     for line in f:
@@ -56,7 +56,7 @@ def get_glove_embeddings():
     return embeddings_index
 
 #WORD2VEC
-def get_word2vec_embeddings():
+def build_word2vec_embeddings():
     word_vecs = gensim.models.KeyedVectors.load_word2vec_format(p.WORD2VEC_PATH, binary = True)
     embeddings_index = {}
     for word, idx in word_vecs.key_to_index.items():
@@ -65,7 +65,7 @@ def get_word2vec_embeddings():
     return embeddings_index    
 
 #FASTTEXT
-def get_fasttext_embeddings():
+def build_fasttext_embeddings():
     embeddings_index = {}
     with open(p.FASTTEXT_PATH, encoding = 'utf8', newline='\n', errors='ignore') as f:
         for line in f: 
@@ -77,13 +77,23 @@ def get_fasttext_embeddings():
     return embeddings_index
 
 #CUSTOM EMBEDDINGS
-def get_custom_embeddings(): 
+def build_custom_embeddings(): 
     word_vecs = gensim.models.Word2Vec.load(p.CUSTOM_PATH)
     embeddings_index = {}
     for word in word_vecs.wv.key_to_index:
         embeddings_index[word] = word_vecs.wv[word]
 
     return embeddings_index    
+
+def get_embedding_vecs(emb_name): 
+    paths = ['train_x_vecs.pkl', 'test_x_vecs.pkl']
+    vecs = []
+    for p in paths:
+        vec_path = os.path.join('embedding_vecs', emb_name, p) 
+        with open(vec_path, 'rb') as f: 
+            vecs.append(pickle.load(f))
+
+    return vecs
 
 """MODEL-SPECIFIC FUNCS======================================================"""
 def bert_processing(train_x, test_x, train_y, test_y): 
@@ -134,9 +144,12 @@ def lstm_build_sequences(data, max_words, max_len, tokenizer = None):
     sequences = pad_sequences(sequences, maxlen = max_len)
     return sequences, tokenizer
 
-def lstm_build_embed_mat(embeddings_index, word_index, max_words, embedding_dim = None):
-    if embedding_dim == None: 
-        embedding_dim = len(embeddings_index[list(embeddings_index.keys())[0]]) #sampling 1st item of word vectors
+def lstm_build_embed_mat(emb_name, embeddings_index, word_index, max_words, embedding_dim = None):
+    if embedding_dim == None:  
+        if emb_name == 'fasttext':
+            embedding_dim = 300
+        else: 
+            embedding_dim = len(embeddings_index[list(embeddings_index.keys())[0]]) #sampling 1st item of word vectors
     embedding_mat = np.zeros((max_words, embedding_dim))
 
     for word, i in word_index.items():
@@ -249,7 +262,7 @@ def store_results(model_name, emb_name, model, accuracy, f1_score, tf_model = 0)
     #Record results
     results_df = pd.read_csv(p.RESULTS_PATH)
     if model_concat in results_df['model_name'].values: 
-        drop_mask = results_df.model == model_concat
+        drop_mask = results_df['model_name'] == model_concat
         results_df.drop(results_df[drop_mask].index, inplace=True)
     results_df = results_df.append({
                             'model_name': model_concat, 
@@ -257,3 +270,33 @@ def store_results(model_name, emb_name, model, accuracy, f1_score, tf_model = 0)
                             'weighted_f1': f1_score}, 
                             ignore_index=True)
     results_df.to_csv(p.RESULTS_PATH, index=False)
+
+# def get_embedding(emb_name, emb_dict, train_x, test_x):
+#     emb_func = emb_dict[emb_name]
+#     train_path = f'embedding_vecs/{emb_name}/train_x_vecs.pkl'
+#     test_path = f'embedding_vecs/{emb_name}/test_x_vecs.pkl'
+#     vecs = []
+#     #Read existing
+#     if os.path.exists(train_path): 
+#         for p in [train_path, test_path]: 
+#             with open(p, 'rb') as f: 
+#                 vecs.append(pickle.load(f))
+#     #Create new vecs
+#     else: 
+#         embeddings_index = emb_func()
+#         train_x_vecs = create_doc_vecs(train_x, embeddings_index)
+#         test_x_vecs = create_doc_vecs(test_x, embeddings_index)
+#         for p, vec in zip([train_path, test_path], [train_x_vecs, test_x_vecs]): 
+#             with open(p, 'wb') as f: 
+#                 pickle.dump(vec, f)
+#         vecs.append(train_x_vecs)
+#         vecs.append(test_x_vecs)
+#     return vecs
+
+
+embedding_funcs = {
+    'word2vec': build_word2vec_embeddings, 
+    'glove': build_glove_embeddings, 
+    'fasttext': build_fasttext_embeddings,
+    'custom': build_custom_embeddings
+}

@@ -1,1 +1,13 @@
 model_name,accuracy,weighted_f1
+svm-word2vec,0.7298,0.7305
+svm-glove,0.7155,0.7144
+svm-fasttext,0.7546,0.7544
+svm-custom,0.78,0.7798
+xgb-word2vec,0.7721,0.7721
+xgb-glove,0.7335,0.733
+xgb-fasttext,0.7684,0.7683
+xgb-custom,0.7996,0.7991
+bilstm-word2vec,0.7858,0.7867
+bilstm-glove,0.7943,0.7942
+bilstm-fasttext,0.7832,0.7815
+bilstm-custom,0.8065,0.806

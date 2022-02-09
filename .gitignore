@@ -131,3 +131,5 @@ dmypy.json
 # Other
 models/
 embeddings/
+examples/
+embedding_vecs/
