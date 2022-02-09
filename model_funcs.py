@@ -106,34 +106,24 @@ def bert_processing(train_x, test_x, train_y, test_y):
 
     return train_x, test_x, train_y, test_y
 
-def bert_tokenize(model_name, tokenizer, bert_clf, train_x, test_x, max_length): 
+def bert_tokenize(model_name, tokenizer, train_x, test_x, max_length): 
     tokenizer = tokenizer.from_pretrained(model_name)
+    tokenized = []
+    for data in [train_x, test_x]: 
+        tokenized_data = tokenizer(
+            text=data,
+            add_special_tokens=True,
+            max_length=max_length,
+            truncation=True,
+            padding=True, 
+            return_tensors='tf',
+            return_token_type_ids = False,
+            return_attention_mask = True,
+            verbose = True)
 
-    x_train = tokenizer(
-        text=train_x,
-        add_special_tokens=True,
-        max_length=max_length,
-        truncation=True,
-        padding=True, 
-        return_tensors='tf',
-        return_token_type_ids = False,
-        return_attention_mask = True,
-        verbose = True)
-    x_test = tokenizer(
-        text=test_x,
-        add_special_tokens=True,
-        max_length=max_length,
-        truncation=True,
-        padding=True, 
-        return_tensors='tf',
-        return_token_type_ids = False,
-        return_attention_mask = True,
-        verbose = True)
-        
-    train_input_ids = x_train['input_ids']
-    train_attention_mask = x_train['attention_mask']        
-
-    return x_train, x_test, train_input_ids, train_attention_mask
+        tokenized.append(tokenized_data)
+    
+    return tokenized
 
 def lstm_build_sequences(data, max_words, max_len, tokenizer = None): 
     if tokenizer == None: #fit new tokenizer
@@ -159,7 +149,7 @@ def lstm_build_embed_mat(emb_name, embeddings_index, word_index, max_words, embe
                 embedding_mat[i] = embedding_vec
     return embedding_dim, embedding_mat
 
-def bert_plot(model, history, test_x, test_y, label_map): 
+def bert_plot(model_name, model, history, test_x, test_y, label_map): 
     #METRICS
     acc = history.history['acc']
     val_acc = history.history['val_acc']
@@ -175,12 +165,13 @@ def bert_plot(model, history, test_x, test_y, label_map):
     plt.ylabel('Loss')
     plt.legend()
 
-    plt.plot(epochs, loss, 'bo', label='Training loss')
-    plt.plot(epochs, val_loss, 'b', label='Validation loss')
+    plt.plot(epochs, loss, 'rx', label='Training loss')
+    plt.plot(epochs, val_loss, 'r', label='Validation loss')
     plt.title('Training and validation loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
+    plt.savefig(f'{model_name}-results.png')
     plt.show()
 
     #REPORTING

@@ -14,18 +14,18 @@ from tensorflow.keras.metrics import CategoricalAccuracy
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.layers import Input, Dense
 
-from transformers import AutoProcessor, AutoTokenizer,TFBertModel
-from transformers import DistilBertTokenizer, TFDistilBertForSequenceClassification
+from transformers import AutoProcessor, AutoTokenizer, TFBertModel
+from transformers import BertTokenizer, TFBertForSequenceClassification 
 from transformers import Trainer, TrainingArguments
 
-def model(x_train, train_y, model_name, max_length):
+def model(bert_clf, x_train, train_y, model_name, max_length):
     #Setup 
     n_classes = train_y.shape[1]
     input_ids = x_train['input_ids']
     attention_mask = x_train['attention_mask']
 
     #ARCHITECTURE
-    model = TFDistilBertForSequenceClassification.from_pretrained(model_name)
+    model = bert_clf.from_pretrained(model_name)
     input_ids = Input(shape=(max_length,), dtype=tf.int32, name="input_ids")
     input_mask = Input(shape=(max_length,), dtype=tf.int32, name="attention_mask")
     embeddings = model(input_ids, attention_mask = input_mask)[0] 
@@ -69,8 +69,9 @@ def train_model(model, x_train, train_y, x_test, test_y):
 
 if __name__ == "__main__":
     # import imp; imp.reload(mf)
-    model_name = "distilbert-base-uncased"
-    max_length = 150 #max token length of samples 
+    model_name = "bert-base-uncased"
+    bert_clf = TFBertForSequenceClassification
+    max_length = 100 #max token length of samples 
     
     train_x, test_x, train_y, test_y, label_map  = mf.get_train_test()
     train_x, test_x, train_y, test_y = mf.bert_processing(train_x, test_x, train_y, test_y)
@@ -79,7 +80,7 @@ if __name__ == "__main__":
                                         train_x,
                                         test_x,
                                         max_length)
-    bert = model(x_train, train_y, model_name, max_length)
+    bert = model(bert_clf, x_train, train_y, model_name, max_length)
     history = train_model(bert, x_train, train_y, x_test, test_y)
     accuracy, WAF1 = mf.bert_plot(model_name, bert, history, x_test, test_y, label_map)
     mf.store_results(model_name, '', bert, accuracy, WAF1, tf_model = 1)
