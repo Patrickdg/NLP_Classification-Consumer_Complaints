@@ -3,3 +3,6 @@ Implementation of SVM, XGBoost, Bi-LSTM, and BERT NLP models on the Consumer Com
 
 # Data Source
 Data is sourced from the (Consumer Complaints dataset via Kaggle)[https://www.kaggle.com/shashwatwork/consume-complaints-dataset-fo-nlp]
+
+# Results
+![Results Table](/results_summary.png?raw=true)  
