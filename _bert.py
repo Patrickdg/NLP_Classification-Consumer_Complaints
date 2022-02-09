@@ -62,7 +62,7 @@ def train_model(model, x_train, train_y, x_test, test_y):
             {'input_ids': x_test['input_ids'],
             'attention_mask': x_test['attention_mask']}, 
             test_y),
-        epochs = 50,
+        epochs = 25,
         batch_size = 16,
         callbacks = [earlystopping])
     return history

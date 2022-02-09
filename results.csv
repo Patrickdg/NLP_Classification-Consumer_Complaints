@@ -12,3 +12,4 @@ bilstm-glove,0.7943,0.7942
 bilstm-fasttext,0.7832,0.7815
 bilstm-custom,0.8065,0.806
 distilbert-base-uncased-,0.825,0.8246
+bert-base-uncased-,0.7314,0.6975
