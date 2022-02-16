@@ -18,6 +18,8 @@ from transformers import AutoProcessor, AutoTokenizer,TFBertModel
 from transformers import DistilBertTokenizer, TFDistilBertForSequenceClassification
 from transformers import Trainer, TrainingArguments
 
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+
 def model(x_train, train_y, model_name, max_length):
     #Setup 
     n_classes = train_y.shape[1]
@@ -30,7 +32,7 @@ def model(x_train, train_y, model_name, max_length):
     input_mask = Input(shape=(max_length,), dtype=tf.int32, name="attention_mask")
     embeddings = model(input_ids, attention_mask = input_mask)[0] 
     out = Dense(max_length, activation='relu')(embeddings)
-    out = tf.keras.layers.Dropout(0.1)(out)
+    # out = tf.keras.layers.Dropout(0.1)(out)
     out = Dense(32, activation = 'relu')(out)
     y = Dense(n_classes, activation = 'sigmoid')(out)
 
@@ -50,9 +52,9 @@ def model(x_train, train_y, model_name, max_length):
 
     return model
 
-def train_model(model, x_train, train_y, x_test, test_y): 
-    earlystopping = EarlyStopping(monitor = "val_loss", 
-                                mode = "min", patience = 10, 
+def train_model(model, x_train, train_y, x_test, test_y, epochs, batch): 
+    earlystopping = EarlyStopping(monitor = "val_acc", 
+                                mode = "max", patience = 10, 
                                 restore_best_weights = True)
     history = model.fit(
         x = {'input_ids': x_train['input_ids'],
@@ -62,15 +64,33 @@ def train_model(model, x_train, train_y, x_test, test_y):
             {'input_ids': x_test['input_ids'],
             'attention_mask': x_test['attention_mask']}, 
             test_y),
-        epochs = 50,
-        batch_size = 16,
+        epochs = int(epochs),
+        batch_size = int(batch),
         callbacks = [earlystopping])
-    return history
+    return model, history
+
+def get_reports(test_y, y_preds, label_map):
+    target_names = [k for k,v in label_map.items()]
+
+    y_preds_max = []
+    for pred in y_preds: 
+        y_preds_max.append(np.argmax(pred))
+    test_max = []
+    for pred in test_y: 
+        test_max.append(np.argmax(pred))
+
+    clf_report = classification_report(test_max, y_preds_max, target_names = target_names, output_dict = True)
+
+    conf_mat = confusion_matrix(test_max, y_preds_max)
+    return clf_report, conf_mat
 
 if __name__ == "__main__":
     # import imp; imp.reload(mf)
     model_name = "distilbert-base-uncased"
     max_length = 150 #max token length of samples 
+    epochs = 100
+    batch = 16
+    params = {var: eval(var) for var in ['max_length', 'epochs', 'batch']}
     
     train_x, test_x, train_y, test_y, label_map  = mf.get_train_test()
     train_x, test_x, train_y, test_y = mf.bert_processing(train_x, test_x, train_y, test_y)
@@ -80,6 +100,7 @@ if __name__ == "__main__":
                                         test_x,
                                         max_length)
     bert = model(x_train, train_y, model_name, max_length)
-    history = train_model(bert, x_train, train_y, x_test, test_y)
-    accuracy, WAF1 = mf.bert_plot(model_name, bert, history, x_test, test_y, label_map)
-    mf.store_results(model_name, '', bert, accuracy, WAF1, tf_model = 1)
+    bert, history = train_model(bert, x_train, train_y, x_test, test_y, epochs, batch)
+    y_preds, accuracy, F1 = mf.bert_plot(model_name, bert, history, x_test, test_y, label_map)
+    clf_report, conf_mat = get_reports(test_y, y_preds, label_map)
+    mf.store_results(model_name, '', bert, params,  accuracy, F1, clf_report, conf_mat, tf_model = 1)

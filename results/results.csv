@@ -1,0 +1,16 @@
+model_name,accuracy,f1
+svm-word2vec,0.821,0.8227
+svm-glove,0.794,0.7956
+svm-fasttext,0.804,0.8078
+svm-custom,0.804,0.8072
+xgb-word2vec,0.7898,0.7926
+xgb-glove,0.7429,0.7385
+xgb-fasttext,0.7869,0.7883
+xgb-custom,0.7955,0.7968
+bilstm-word2vec,0.777,0.7776
+bilstm-fasttext,0.7344,0.7374
+bilstm-custom,0.7784,0.7802
+distilbert-base-uncased-,0.7983,0.7959
+bert-base-uncased-,0.8153,0.8153
+roberta-base-,0.8409,0.8394
+bilstm-glove,0.8097,0.8107
