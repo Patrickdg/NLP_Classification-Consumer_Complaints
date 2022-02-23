@@ -3,11 +3,13 @@ import processing as p
 import os
 import numpy as np
 import pandas as pd
+import random
 import pickle
 import gensim
+
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.models import load_model
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 import matplotlib.pyplot as plt
 
@@ -42,6 +44,16 @@ def create_doc_vecs(docs, word_vecs):
         doc_vecs.append(doc_vec)
         
     return doc_vecs
+
+#Retrieve build embeddings
+def get_embedding_vecs(emb_name): 
+    paths = ['train_x_vecs.pkl', 'test_x_vecs.pkl']
+    vecs = []
+    for p in paths:
+        vec_path = os.path.join('embedding_vecs', emb_name, p) 
+        with open(vec_path, 'rb') as f: 
+            vecs.append(pickle.load(f))
+    return vecs
 
 #GLOVE
 def build_glove_embeddings(): 
@@ -85,45 +97,48 @@ def build_custom_embeddings():
 
     return embeddings_index    
 
-def get_embedding_vecs(emb_name): 
-    paths = ['train_x_vecs.pkl', 'test_x_vecs.pkl']
-    vecs = []
-    for p in paths:
-        vec_path = os.path.join('embedding_vecs', emb_name, p) 
-        with open(vec_path, 'rb') as f: 
-            vecs.append(pickle.load(f))
-
-    return vecs
-
 """MODEL-SPECIFIC FUNCS======================================================"""
-def bert_processing(train_x, test_x, train_y, test_y): 
-    for data in [train_x, test_x]: 
-        for i, l in enumerate(data): 
-            data[i] = ' '.join(data[i])
-    
-    train_y = to_categorical(train_y)
-    test_y = to_categorical(test_y) 
-
-    return train_x, test_x, train_y, test_y
-
-def bert_tokenize(model_name, tokenizer, train_x, test_x, max_length): 
+#BERT
+def bert_processing(tokenizer, model_name, x, y, max_length): 
     tokenizer = tokenizer.from_pretrained(model_name)
-    tokenized = []
-    for data in [train_x, test_x]: 
-        tokenized_data = tokenizer(
-            text=data,
-            add_special_tokens=True,
-            max_length=max_length,
-            truncation=True,
-            padding=True, 
-            return_tensors='tf',
-            return_token_type_ids = False,
-            return_attention_mask = True,
-            verbose = True)
+    if isinstance(x[0], list): #samples are already tokenized: 
+        x = list(map(' '.join, x)) 
+        
+    tokenized = tokenizer(
+        x, 
+        add_special_tokens=True, 
+        max_length=max_length, 
+        padding='max_length',
+        return_attention_mask=True,
+        truncation=True,
+        return_tensors='tf')
 
-        tokenized.append(tokenized_data)
-    return tokenized
+    labels = np.array(pd.get_dummies(y).values)
+    return [tokenized, labels]
 
+def bert_train(model, train_data, test_data, epochs, batch, callbacks): 
+    x_train, train_y = train_data 
+    x_test, test_y = test_data 
+
+    history = model.fit(
+        x = {'input_ids': x_train['input_ids'],
+            'attention_mask': x_train['attention_mask']},
+        y = train_y,
+        validation_data = [
+            {'input_ids': x_test['input_ids'],
+            'attention_mask': x_test['attention_mask']}, 
+            test_y],
+        epochs = int(epochs),
+        batch_size = int(batch),
+        callbacks = [callbacks])
+    return model, history
+
+def bert_load(transformer_name,transformer, model_path): 
+    cust = {transformer_name: transformer}
+    model = load_model(model_path, custom_objects = cust)
+    return model
+
+#LSTM
 def lstm_build_sequences(data, max_words, max_len, tokenizer = None): 
     if tokenizer == None: #fit new tokenizer
         tokenizer = Tokenizer(num_words=max_words, lower=False)
@@ -148,7 +163,58 @@ def lstm_build_embed_mat(emb_name, embeddings_index, word_index, max_words, embe
                 embedding_mat[i] = embedding_vec
     return embedding_dim, embedding_mat
 
-def generic_plot(epochs, acc, val_acc, loss, val_loss, model_name): 
+def lstm_processing(train_x, test_x, max_words, max_len): 
+    train_x, tokenizer = lstm_build_sequences(train_x, max_words, max_len)
+    test_x, tokenizer = lstm_build_sequences(test_x, max_words, max_len, tokenizer=tokenizer)
+    word_index = tokenizer.word_index
+    return train_x, test_x, word_index
+
+def lstm_train(model, train_x, train_y, epochs, batch, callbacks):
+    history = model.fit(train_x, np.array(train_y),
+                        epochs=int(epochs),
+                        batch_size=int(batch),
+                        validation_split=0.1, 
+                        callbacks=[callbacks])
+    return model, history
+
+#GENERAL
+def get_scores(model, test_data, one_hot_encoded = 0, bert_input_format = 0): 
+    test_x, test_y = test_data
+    if bert_input_format: 
+        testing_x = {'input_ids': test_x['input_ids'], 'attention_mask': test_x['attention_mask']}
+    else: 
+        testing_x = test_x
+    #remove one-hot encoding
+    if one_hot_encoded:
+        test_y = list(map(np.argmax, test_y))
+    
+    y_preds = model.predict(testing_x)
+    y_preds = list(map(np.argmax, y_preds))
+
+    # target_names = [k for k,v in label_map.items()]
+    accuracy = np.round(accuracy_score(test_y, y_preds), 4)
+    f1 = np.round(f1_score(test_y, y_preds, average = 'macro'), 4)
+    return y_preds, accuracy, f1
+
+def get_reports(test_y, y_preds, label_map, test_one_hot = 1, pred_one_hot = 0):
+    target_names = [k for k,v in label_map.items()]
+    #remove one-hot encoding
+    if test_one_hot:
+        test_y = list(map(np.argmax, test_y))
+    if pred_one_hot:
+        y_preds = list(map(np.argmax, y_preds))
+
+    clf_report = classification_report(test_y, y_preds, target_names = target_names, output_dict = True)
+    conf_mat = confusion_matrix(test_y, y_preds)
+    return clf_report, conf_mat
+
+def tf_plot(history, model_name, emb_name, show = 1, save = 0): 
+    acc = history.history['acc'][:-1]
+    val_acc = history.history['val_acc'][:-1]
+    loss = history.history['loss'][:-1]
+    val_loss = history.history['val_loss'][:-1]
+    epochs = range(0, len(acc))
+    
     plt.plot(epochs, acc, 'bo', label='Training acc')
     plt.plot(epochs, val_acc, 'b', label='Validation acc')
     plt.title('Training and validation accuracy')
@@ -162,50 +228,10 @@ def generic_plot(epochs, acc, val_acc, loss, val_loss, model_name):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'{model_name}-results.png')
-    plt.show()
-
-def bert_plot(model_name, model, history, test_x, test_y, label_map): 
-    #METRICS
-    acc = history.history['acc']
-    val_acc = history.history['val_acc']
-    loss = history.history['loss']
-    val_loss = history.history['val_loss']
-    epochs = range(1, len(loss) + 1)
-    generic_plot(epochs, acc, val_acc, loss, val_loss, model_name)
-    #REPORTING
-    testing_x = {'input_ids': test_x['input_ids'], 'attention_mask': test_x['attention_mask']}
-    y_preds = model.predict(testing_x)
-    num_classes = len(list(label_map.items()))
-    for idx, l in enumerate(y_preds): 
-        coded = np.zeros(num_classes)
-        coded[np.argmax(l, axis = 0)] = 1.0
-        y_preds[idx] = coded
-
-    target_names = [k for k,v in label_map.items()]
-    accuracy = np.round(accuracy_score(test_y, y_preds), 4)
-    f1 = np.round(f1_score(test_y, y_preds, average = 'macro'), 4)
-
-    return y_preds, accuracy, f1
-
-def lstm_plot(model_name, model, history, test_x, test_y):
-    acc = history.history['acc'][:-1]
-    val_acc = history.history['val_acc'][:-1]
-    loss = history.history['loss'][:-1]
-    val_loss = history.history['val_loss'][:-1]
-    epochs = range(0, len(acc))
-
-    generic_plot(epochs, acc, val_acc, loss, val_loss, model_name)
-
-    #TESTING instances
-    y_pred_arrs = model.predict(test_x)
-    y_preds = []
-    for pred in y_pred_arrs: 
-        y_preds.append(np.argmax(pred))
-    accuracy = np.round(accuracy_score(test_y, y_preds), 4)
-    f1 = np.round(f1_score(test_y, y_preds, average = 'macro'), 4)
-
-    return y_preds, accuracy, f1
+    if save: 
+        plt.savefig(f'{model_name}-{emb_name}-results.png')
+    if show: 
+        plt.show()
 
 def save_clf_report(report, report_name):
     class_keys = list(report.keys())[:-3]
@@ -248,45 +274,51 @@ def run_model(model, train_x, train_y, test_x, test_y, label_map):
     return model, best_params, y_preds, accuracy, f1, clf_report, conf_mat
 
 def store_results(model_name, emb_name, model, best_params, accuracy, f1_score, clf_report, conf_mat, tf_model = 0): 
-    #Save model
-    model_concat = f'{model_name}-{emb_name}'
+    """Stores the following: 
+        - model (sklearn or tensorflow) in /models dir
+        - Precision/recall report + Confusion matrix in /results dir
+        - overall accuracy + f1-score in /results/results.csv 
+        - best model parameters in /results/best_params.csv
+    """
+    #SAVE MODEL
+    model_concat = f'{model_name}-{emb_name}' if emb_name != '' else model_name
     model_path = f'models/{model_concat}'
     if tf_model: 
-        if not os.path.exists(model_path): 
-            os.mkdir(model_path)
-        model.save(model_path)
+        model.save(f'{model_path}.h5', save_format='tf')
     else:
         with open(f'{model_path}.pkl', 'wb') as f: 
             pickle.dump(model, f)
 
-    #Record results
+    #SAVE ACCURACY + EVAL METRICS
     save_clf_report(clf_report, model_concat)
     save_conf_mat(conf_mat, model_concat)
+
     results_path = p.RESULTS_PATH+'results.csv'
     results_df = pd.read_csv(results_path)
     if model_concat in results_df['model_name'].values: 
-        #Delete existing instance
-        drop_mask = results_df['model_name'] == model_concat
+        drop_mask = results_df['model_name'] == model_concat #Delete existing
         results_df.drop(results_df[drop_mask].index, inplace=True)
-    results_df = results_df.append({
-        'model_name': model_concat, 
-        'accuracy': accuracy, 
-        'f1': f1_score}, 
-        ignore_index=True)
+    model_results = pd.DataFrame({
+                                'model_name': model_concat, 
+                                'accuracy': accuracy, 
+                                'f1': f1_score}, 
+                                index = [0])
+    results_df = pd.concat([results_df, model_results], ignore_index=True)
     results_df.to_csv(results_path, index=False)
 
-    #Best Params
+    #SAVE BEST PARAMS
     params_path = p.RESULTS_PATH+'best_params.csv'
     params_df = pd.read_csv(params_path)
     if model_concat in params_df['model_name'].values: 
-        #Delete existing instance
-        drop_mask = params_df['model_name'] == model_concat
+        drop_mask = params_df['model_name'] == model_concat #Delete existing
         params_df.drop(params_df[drop_mask].index, inplace=True)
-    params_df = params_df.append({
-        'model_name': model_concat, 
-        'params': str(best_params)},
-        ignore_index = True)
+    model_params = pd.DataFrame({
+                                'model_name': model_concat, 
+                                'params': str(best_params)}, 
+                                index = [0])
+    params_df = pd.concat([params_df, model_params], ignore_index=True)
     params_df.to_csv(params_path, index=False)
+
 
 embedding_funcs = {
     'word2vec': build_word2vec_embeddings, 
@@ -309,3 +341,57 @@ def run_all(data, MODEL_NAME, OVERWRITE_FLAG):
                                                                     label_map)
             store_results(MODEL_NAME, emb_name, model, best_params, accuracy, f1, clf_report, conf_mat)
     return model
+
+#INTERPRETABILITY FUNCS
+def explainer_get_weights(explainer, data_x, data_y, label_map, data_prop = 0.05, wt_threshold = 1.0, classification_type = None, n_samples = 10):
+    class_names = list(label_map.keys())
+    
+    """
+    classification_type = 
+        'True' --> get word attributions for correctly classified instances only
+        'False' --> get word attributions for INcorrectly classified instances only
+        'None' --> get all word attributions
+    """ 
+    n = len(data_x); sample_rate = n_samples/n
+    samples = [] #return a few samples for visualization
+    results = {c:{'pos': [], 'neg': []} for c in class_names}
+    # for c, c_idx in label_map.items(): 
+    for x, y_true in zip(data_x, data_y): 
+        if random.random() < data_prop: 
+            #Get weights for instance; store sample
+            w_weights = explainer(' '.join(x))
+            if random.random() < (sample_rate):
+                samples.append(w_weights)
+                explainer.visualize()
+            y_pred = explainer.predicted_class_index; print(y_pred)
+            correctly_classified = y_pred == y_true
+            #Break conditions
+            if classification_type == True and not correctly_classified: 
+                continue
+            elif classification_type == False and correctly_classified: 
+                continue
+            #Store results
+            neg_weights = [(w, wt) for (w, wt) in w_weights if wt < 0 and np.abs(wt) >= wt_threshold]
+            pos_weights = [(w, wt) for (w, wt) in w_weights if wt > 0 and np.abs(wt) >= wt_threshold]
+            c_name = class_names[y_pred]
+
+            results[c_name]['neg'].append(neg_weights)
+            results[c_name]['pos'].append(pos_weights)
+    return results, samples
+
+def explainer_get_common_words(results, label_map, top_n = 30): 
+    class_names = list(label_map.keys())
+    """For each class, determines the 'top_n' most heavily weighted positive and negative words"""
+    results = {c:{'pos': [], 'neg': []} for c in class_names}
+    for c in class_names:
+        c_weights = {'pos': [], 'neg': []}
+        for p in list(c_weights.keys()): 
+            top_n = []
+            polarity_weights = results[c][p]
+            for x_weights in polarity_weights: 
+                desc = True if p == 'pos' else False
+                num_words = min(len(x_weights), top_n)
+                top_n.extend(x_weights)
+                top_n = sorted(top_n, key = lambda tup: tup[1], reverse = desc)[:num_words]
+            c_weights[p] = top_n 
+    return results
