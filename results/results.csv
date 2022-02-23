@@ -7,10 +7,10 @@ xgb-word2vec,0.7898,0.7926
 xgb-glove,0.7429,0.7385
 xgb-fasttext,0.7869,0.7883
 xgb-custom,0.7955,0.7968
-roberta-base,0.8409,0.8394
 distilbert-base-uncased,0.831,0.8331
 bert-base-uncased,0.7997,0.7977
 bilstm-word2vec,0.8026,0.8034
 bilstm-glove,0.8068,0.804
 bilstm-fasttext,0.7969,0.7996
 bilstm-custom,0.8168,0.815
+roberta-base,0.8565,0.8586

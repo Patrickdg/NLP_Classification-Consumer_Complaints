@@ -21,7 +21,7 @@ def model(clf, hidden_layers = 0, hidden_units = 1024):
     out = Dense(hidden_units, activation='relu')(embeddings)
     for h in range(hidden_layers): 
         out = Dense(hidden_units, activation='relu')(out)
-    # out = tf.keras.layers.Dropout(0.1)(out)
+    # out = tf.keras.layers.Dropout(0.2)(out)
     # out = Dense(32, activation = 'relu')(out)
     y = Dense(NUM_CLASSES, activation = 'softmax', name='outputs')(out)
 
@@ -46,11 +46,11 @@ if __name__ == "__main__":
     MAX_LEN = 100 #max token length of samples 
 
     NUM_ADD_HIDDEN_LAYERS = 2
-    NUM_HIDDEN_UNITS = 100 #per hidden layer
-    EPOCHS = 100
+    NUM_HIDDEN_UNITS = 512 #per hidden layer
+    EPOCHS = 20
     BATCH_SIZE = 16
-    PATIENCE = 10
-    MIN_DELTA = 0.005
+    PATIENCE = 5
+    MIN_DELTA = 0.005 #earlystopping metric
 
     LR = 5e-05
     EPSILON = 1e-08
@@ -68,6 +68,7 @@ if __name__ == "__main__":
                             restore_best_weights=True)
     PARAMS = {var: eval(var) for var in ['MAX_LEN',
                                         'NUM_ADD_HIDDEN_LAYERS',
+                                        'NUM_HIDDEN_UNITS',
                                         'BATCH_SIZE',
                                         'EPOCHS',
                                         'PATIENCE',
@@ -84,8 +85,8 @@ if __name__ == "__main__":
     MODEL = model(BERT, NUM_ADD_HIDDEN_LAYERS, NUM_HIDDEN_UNITS)
     MODEL, history = mf.bert_train(MODEL, train_data, test_data, EPOCHS, BATCH_SIZE, CALLBACKS)
     #EVALUATION
-    y_preds, accuracy, f1 = mf.get_scores(MODEL, test_data, bert_input_format = 1)
+    y_preds, accuracy, f1 = mf.get_scores(MODEL, test_data, one_hot_encoded = 1, bert_input_format = 1)
     clf_report, conf_mat = mf.get_reports(test_data[1], y_preds, label_map)
     #STORAGE
     mf.store_results(MODEL_NAME, '', MODEL, PARAMS, accuracy, f1, clf_report, conf_mat, tf_model = 1)
-    mf.tf_plot(history, MODEL_NAME, show = 0, save = 0)
+    mf.tf_plot(history, MODEL_NAME, emb_name = '', show = 1, save = 1)
